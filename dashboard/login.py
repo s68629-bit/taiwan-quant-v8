@@ -12,13 +12,13 @@ def check_password():
     """
     def _verify(username, password):
         try:
-            correct_user = st.secrets["LOGIN_USERNAME"]
-            correct_pass = st.secrets["LOGIN_PASSWORD"]
+            correct_user = st.secrets["LOGIN_USERNAME"].strip()
+            correct_pass = st.secrets["LOGIN_PASSWORD"].strip()
         except Exception:
             st.error("⚠️ 系統設定錯誤：找不到帳號密碼設定，請聯絡管理員。")
             return False
-        user_ok = hmac.compare_digest(username.encode(), correct_user.encode())
-        pass_ok = hmac.compare_digest(password.encode(), correct_pass.encode())
+        user_ok = hmac.compare_digest(username.strip().encode(), correct_user.encode())
+        pass_ok = hmac.compare_digest(password.strip().encode(), correct_pass.encode())
         return user_ok and pass_ok
 
     # 已登入 → 直接通過
