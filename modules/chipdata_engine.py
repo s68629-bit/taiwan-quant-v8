@@ -13,6 +13,16 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 FINMIND_URL = "https://api.finmindtrade.com/api/v4/data"
 
+# 清理 Token：移除換行/空白/非 ASCII，確保可放入 HTTP Header
+def _clean_token(token):
+    if not token:
+        return token
+    token = token.strip()
+    token = token.encode("ascii", errors="ignore").decode("ascii")
+    return token
+
+_CLEAN_TOKEN = _clean_token(FINMIND_TOKEN)
+
 # FinMind 三大法人 name 欄位（中英文皆支援）
 FOREIGN_NAMES = {"外資","外資及陸資","Foreign_Investor","Foreign_Dealer_Self"}
 TRUST_NAMES   = {"投信","Investment_Trust"}
@@ -29,7 +39,7 @@ def _is_fresh(path):
 
 def _finmind(dataset, stock_id, start_date):
     params  = {"dataset": dataset, "data_id": stock_id, "start_date": start_date}
-    headers = {"Authorization": f"Bearer {FINMIND_TOKEN}"} if FINMIND_TOKEN else {}
+    headers = {"Authorization": f"Bearer {_CLEAN_TOKEN}"} if _CLEAN_TOKEN else {}
     try:
         r = requests.get(FINMIND_URL, params=params, headers=headers, timeout=20)
         r.raise_for_status()
@@ -137,7 +147,7 @@ def test_finmind_connection():
         result["recommendation"] = "請至 FinMind 官網取得 Token 並填入 config/settings.py"
         return result
 
-    headers = {"Authorization": f"Bearer {FINMIND_TOKEN}"}
+    headers = {"Authorization": f"Bearer {_CLEAN_TOKEN}"}
 
     # 測試1：基本 API
     try:
