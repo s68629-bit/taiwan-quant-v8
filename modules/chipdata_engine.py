@@ -1,7 +1,7 @@
 """
-籌碼資料引擎 v5.1
-修正：FinMind API 回傳英文 name 欄位，更新對應表
-      同時支援中英文名稱，自動合計子分類
+籌碼資料引擎 v5.2
+修正：FinMind API 改用 token 參數方式傳遞，解決海外 IP Header 限制問題
+      timeout 縮短為 10 秒，加快雲端版回應速度
 """
 import os, time, logging
 import requests
@@ -38,10 +38,19 @@ def _is_fresh(path):
            (time.time() - os.path.getmtime(path)) < CACHE_HOURS * 3600
 
 def _finmind(dataset, stock_id, start_date):
-    params  = {"dataset": dataset, "data_id": stock_id, "start_date": start_date}
-    headers = {"Authorization": f"Bearer {_CLEAN_TOKEN}"} if _CLEAN_TOKEN else {}
+    # Token 改用 params 傳遞（繞過海外 IP 的 Header 編碼限制）
+    params = {
+        "dataset":    dataset,
+        "data_id":    stock_id,
+        "start_date": start_date,
+        "token":      _CLEAN_TOKEN,
+    } if _CLEAN_TOKEN else {
+        "dataset":    dataset,
+        "data_id":    stock_id,
+        "start_date": start_date,
+    }
     try:
-        r = requests.get(FINMIND_URL, params=params, headers=headers, timeout=20)
+        r = requests.get(FINMIND_URL, params=params, timeout=10)
         r.raise_for_status()
         d = r.json()
         if d.get("status") == 200 and d.get("data"):
@@ -147,13 +156,11 @@ def test_finmind_connection():
         result["recommendation"] = "請至 FinMind 官網取得 Token 並填入 config/settings.py"
         return result
 
-    headers = {"Authorization": f"Bearer {_CLEAN_TOKEN}"}
-
-    # 測試1：基本 API
+    # 測試1：基本 API（token 帶在 params）
     try:
         r = requests.get("https://api.finmindtrade.com/api/v4/data",
-                         params={"dataset":"TaiwanStockInfo"},
-                         headers=headers, timeout=15)
+                         params={"dataset":"TaiwanStockInfo", "token": _CLEAN_TOKEN},
+                         timeout=10)
         d = r.json()
         if d.get("status") == 200 and d.get("data"):
             result["api_ok"] = True
@@ -173,8 +180,9 @@ def test_finmind_connection():
     try:
         r2 = requests.get("https://api.finmindtrade.com/api/v4/data",
                           params={"dataset":"TaiwanStockInstitutionalInvestorsBuySell",
-                                  "data_id":"2330","start_date":"2025-01-01"},
-                          headers=headers, timeout=15)
+                                  "data_id":"2330","start_date":"2025-01-01",
+                                  "token": _CLEAN_TOKEN},
+                          timeout=10)
         d2 = r2.json()
         if d2.get("status") == 200 and d2.get("data"):
             result["chip_ok"] = True
