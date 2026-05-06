@@ -1,5 +1,5 @@
 """
-第一階段：技術面快篩引擎（v8 核心）
+第一階段：技術面快篩引擎（v8.1 核心）
 ===============================================================
 對全市場 ~970 支上市股票做快速技術面篩選
 只使用 yfinance（無 API 額度限制）
@@ -43,8 +43,10 @@ MIN_AVG_VOLUME   = 500     # 最低均量（張）= 500,000 股
 MAX_DROP_5D      = -0.12   # 近 5 日最大跌幅（超過此值淘汰）
 MIN_DATA_BARS    = 60      # 最少資料筆數
 STAGE1_MAX       = 250     # 第一階段最多保留支數
-BATCH_SIZE       = 30      # 批次下載大小
-MAX_WORKERS      = 8       # 平行下載執行緒數
+BATCH_SIZE       = 20      # 批次下載大小（縮小避免限速）
+BATCH_DELAY      = 2.0     # 批次間延遲秒數（避免 yfinance 限速）
+RETRY_DELAY      = 5.0     # 限速後重試等待秒數
+MAX_WORKERS      = 4       # 平行下載執行緒數（降低避免限速）
 
 
 def run_stage1(stocks_tw, use_cache=True):
@@ -77,7 +79,11 @@ def run_stage1(stocks_tw, use_cache=True):
         print(f"\r  [{bar}] {pct:.0f}%  快篩中 {done}/{total}",
               end="", flush=True)
 
-        # 批次下載（yfinance 支援同時下載多支）
+        # 批次間延遲，避免觸發 yfinance 限速
+        if batch_idx > 0:
+            time.sleep(BATCH_DELAY)
+
+        # 批次下載（yfinance 支援同時下載多支），失敗自動重試一次
         batch_data = _download_batch(batch)
 
         for sym in batch:
@@ -135,15 +141,31 @@ def _download_batch(symbols):
 
     # 批次下載未快取的
     if to_download:
+        # 最多重試 2 次（限速時等待後重試）
+        for attempt in range(2):
+            try:
+                raw = yf.download(
+                    to_download,
+                    period="6mo",
+                    interval="1d",
+                    progress=False,
+                    auto_adjust=True,
+                    group_by="ticker",
+                )
+                break  # 成功就跳出重試迴圈
+            except Exception as e:
+                if "rate" in str(e).lower() or "too many" in str(e).lower():
+                    if attempt == 0:
+                        logger.warning("yfinance 限速，等待 %.0f 秒後重試...", RETRY_DELAY)
+                        time.sleep(RETRY_DELAY)
+                        continue
+                raw = pd.DataFrame()  # 重試失敗，用空 DataFrame
+                break
         try:
-            raw = yf.download(
-                to_download,
-                period="6mo",
-                interval="1d",
-                progress=False,
-                auto_adjust=True,
-                group_by="ticker",
-            )
+            _ = raw  # 確保 raw 有定義
+        except NameError:
+            raw = pd.DataFrame()
+        if True:
 
             for sym in to_download:
                 try:
@@ -172,7 +194,7 @@ def _download_batch(symbols):
                     cache_results[sym] = None
 
         except Exception as e:
-            logger.debug("批次下載失敗：%s", e)
+            logger.debug("批次下載例外：%s", e)
             for sym in to_download:
                 cache_results[sym] = None
 
